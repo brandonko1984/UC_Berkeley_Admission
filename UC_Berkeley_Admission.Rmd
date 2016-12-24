@@ -1,0 +1,207 @@
+---
+subtitle: 'Logistic Regression'
+author: "Brandon Ko"
+date: "Sep 2015"
+output:
+  html_document:
+    highlight: tango
+    theme: spacelab
+---
+
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 120, scipen=999)  # set output width, turn off scientific notation for big numbers
+```
+
+
+## Q1. Gender Discrimination in UC Berkeley Admissions
+
+The *UCBAdmissions* dataset in R has aggregate data on applicants to graduate school at Berkeley for the six largest departments in 1973 classified by admission and sex. At issue is whether the data show evidence of sex bias in admission practices. There were 2691 male applicants, of whom 1198 (44.5%) were admitted, compared with 1835 female applicants of whom 557 (30.4%) were admitted. This gives a sample odds ratio of 1.83, indicating that males were almost twice as likely to be admitted.
+
+Let's first convert the dataset into a dataframe.
+```{r}
+UCBAdmissions.df <- as.data.frame(UCBAdmissions)
+head(UCBAdmissions.df)
+```
+
+We use Logistic Regression to test the accusation.
+
+a. Use *reshape2* package to convert the dataset into proper shape with two separte columns showing the number of admitted and rejected applicants for each *Gender* and *Dept* combinations.
+
+```{r}
+library("reshape2")
+UCBAdmissions.df
+mydata <- dcast(UCBAdmissions.df, Gender + Dept ~ Admit, value.var="Freq")
+mydata
+```
+
+b. Run Logistic Regression of *(admitted, rejected)* on predictor *Gender*. What is the probablity of a female being admitted? Briefly comment on whether there is sex bias based on the model output.
+
+```{r}
+glm1 <- glm(cbind(Admitted,Rejected) ~ Gender, data=mydata, family=binomial(link="logit"))
+summary(glm1)
+```
+
+c. Run Logistic Regression of *(admitted, rejected)* on predictor *Gender* and *Dept*. Briefly comment on whether there is sex bias based on the model output and the difference from the conclusion made by the previous model.
+
+```{r}
+glm2 <- glm(cbind(Admitted,Rejected) ~ Gender + Dept , data=mydata, family=binomial(link="logit"))
+summary(glm2)
+```
+
+d. Introduce interaction term between *Gender* and *Dept* into the previous model. Briefly interpret the model output.
+
+```
+glm3 <- glm(cbind(Admitted,Rejected) ~ Gender*Dept , data=mydata, family=binomial(link="logit"))
+summary(glm3)
+```
+
+## Q2. Logistic Regression on the mixture.example dataset
+
+Here we want to do the same classification using Logistic Regression and compare their performance on the test dataset.
+
+
+```{r results='hide', message=FALSE, warning=FALSE}
+
+library("ElemStatLearn") 
+
+# copy important ones out
+x <- mixture.example$x
+y <- mixture.example$y
+prob <- mixture.example$prob
+xnew <- mixture.example$xnew
+px1 <- mixture.example$px1
+px2 <- mixture.example$px2
+summary(x)
+head(x)
+summary(y)
+head(y)
+summary(prob)
+
+# make dataframe for x and y (for ggplot use)
+df.training <- data.frame(x1=x[ , 1], x2=x[ , 2], y=y)
+df.training
+summary(df.training)
+df.training$y <- as.factor(df.training$y)
+# dataframe for plotting the boundary
+df.grid <- expand.grid(x1=px1, x2=px2)
+df.grid$prob <- prob
+head(df.grid)
+summary(df.grid)
+?expand.grid
+
+# plot X and Y
+library("ggplot2")
+p0 <- ggplot() + geom_point(data=df.training, aes(x=x1, y=x2, color=y), size=4) + scale_color_manual(values=c("green", "red"))
+p0
+# add the true boundary into the plot
+p.true <- p0 + stat_contour(data=df.grid, aes(x=x1, y=x2, z=prob), breaks=c(0.5))
+p.true
+```
+
+a. Run Logistic Regression of *y* on *x1* and *x2* using the *df.training* dataset.
+
+```{r}
+glm.knn <- glm( y ~ x1 + x2 , data=df.training, family=binomial(link="logit"))
+summary(glm.knn)
+```
+
+b. Predict the probability of *y* using *df.grid* as the newdata. Plot the decision boundary of model just like we did for the true decision boundary above. Interpret the boundary verbally.
+
+```{r}
+predict<-predict(glm.knn, newdata=df.grid, type="response")
+p.predict <- p0 + stat_contour(data=df.grid, aes(x=x1, y=x2, z=predict), breaks=c(0.5))
+plot(p.predict)
+```
+c. Fit the Logistic Regression model with up to 6th-order polynomial of *x1* and *x2*. Repeat the prediction on *df.grid* and plot the decision boundary.
+
+```
+glm.poly <- glm( y ~ poly(x1,6,raw=TRUE) + poly(x2,6,raw=TRUE) , data=df.training, family=binomial(link="logit"))
+summary(glm.poly)
+
+predict.poly<-predict(glm.poly, newdata=df.grid, type="response")
+predict.poly
+p.predict1 <- p0 + stat_contour(data=df.grid, aes(x=x1, y=x2, z=predict.poly), breaks=c(0.5))
+p.predict1
+```
+
+Next, let's generate a test dataset and compare the performance of the two logistic regression models with kNN. Again, we can copy the code from *knn_demo.R*.
+```{r results='hide', message=FALSE, warning=FALSE}
+library(MASS)
+set.seed(123)
+centers <- c(sample(1:10, 5000, replace=TRUE), 
+             sample(11:20, 5000, replace=TRUE))
+?sample()
+?mvrnorm()
+?rep()
+means <- mixture.example$means
+means <- means[centers, ]
+x.test <- mvrnorm(10000, c(0, 0), 0.2 * diag(2))
+head(x.test)
+x.test <- x.test + means
+y.test <- c(rep(0, 5000), rep(1, 5000))
+y.test
+df.test <- data.frame(x1=x.test[, 1], x2=x.test[, 2], y=y.test)
+head(df.test)
+tail(df.test)
+
+# best possible misclassification rate
+bayes.error <- sum(mixture.example$marginal * (prob * I(prob < 0.5) + (1-prob) * I(prob >= 0.5)))
+bayes.error
+```
+Here *x.test* and *y.test* are the separate test data for the *knn()* function, whereas *df.test* is for *glm()*. They are the same data in different format. The *bayes.error* gives the best possible misclassification rate when the true model is known. We will use it as the limit.
+
+The following code obtains probability prediction of kNN for k=1, 7, and 100 and save the probability predictions as three columns in the *df.test* dataframe.
+```{r}
+## predict with various knn models
+library("class")
+ks <- c(1, 7, 100)
+for (i in seq(along=ks)) {
+    mod.test  <- knn(x, x.test, y, k=ks[i], prob=TRUE)
+    prob <- attr(mod.test, "prob")
+    prob <- ifelse(mod.test == "1", prob, 1 - prob)
+    df.test[, paste0("prob.knn", ks[i])] <- prob
+}
+head(df.test)
+```
+
+d. Obtain the probability prediction of the two Logistic Regression models built earlier, and save them as two columns in *df.test*, too.
+
+predict2d<-predict(glm.knn, df.test, type="response")
+df.test$glm.knn<-predict2d
+predict2d<-predict(glm.poly, df.test, type="response")
+df.test$glm.poly<-predict2d
+head(df.test)
+
+e. Plot the misclassification rate of the 5 models in one plot, and also plot *bayes.error* as the benchmark.
+
+predict1 <- prediction(df.test[,4],df.test$y)
+predict2 <- prediction(df.test[,5],df.test$y)
+predict3 <- prediction(df.test[,6],df.test$y)
+predict4 <- prediction(df.test[,7],df.test$y)
+predict5 <- prediction(df.test[,8],df.test$y)
+
+# misclassificatin vs. fpr vs. fnr
+err.1 = performance(predict1, measure="err")
+err.2 = performance(predict2, measure="err")
+err.3 = performance(predict3, measure="err")
+err.4 = performance(predict4, measure="err")
+err.5 = performance(predict5, measure="err")
+
+# plot in one figure
+plot(err.1, col="black", ylim=c(0,1))
+plot(err.2, col="red", add=TRUE)
+plot(err.3, col="green", add=TRUE)
+plot(err.4, col="blue", add=TRUE)
+plot(err.5, col="yellow", add=TRUE)
+abline(a = bayes.error, b = 0, col = "darkcyan")
+
+legend(x=0.7, y=0.5, legend=c("Error Rate", "False Positive Rate", "False Negative Rate"), lty=c(1, 1, 1), lwd=c(2, 2, 2), col=c("black", "red", "blue"))
+
+bayes.error <- sum(mixture.example$marginal * (prob * I(prob < 0.5) + (1-prob) * I(prob >= 0.5)))
+?I()
+probknn1.error <- sum(mixture.example$marginal * (prob * I(prob < 0.5) + (1-prob) * I(prob >= 0.5)))
+
+
+f. Plot the ROC curve of all the 5 models in one plot, and compare the models.
+
+
